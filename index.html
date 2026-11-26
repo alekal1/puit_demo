@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="et">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Puidutööstus MES prototüüp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: app shell — top bar, role-based left nav, work area, design-notes rail (requirements layer) */
+:root{
+  --bg:#eef1ed; --surface:#ffffff; --surface-2:#e4e9e3; --fg:#1b231f; --muted:#56635c; --line:#cfd7cf;
+  --accent:#2c6449; --accent-fg:#ffffff; --accent-soft:#d6e7dc; --wood:#a8642a; --wood-soft:#f1e2d1;
+  --ok:#24734a; --ok-soft:#d8eedf; --warn:#9a5b00; --warn-soft:#f8e7c8; --bad:#a7271f; --bad-soft:#f6dcd9; --info:#2a5890; --info-soft:#dbe6f4;
+  --req:#5b3e9a; --req-soft:#e8e1f5;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111613; --surface:#18201b; --surface-2:#212a24; --fg:#e3eae5; --muted:#9aa89f; --line:#2e3a32;
+  --accent:#6db58f; --accent-fg:#0d1510; --accent-soft:#1f3b2c; --wood:#d99a5e; --wood-soft:#3a2b1d;
+  --ok:#6cc892; --ok-soft:#173726; --warn:#e3a640; --warn-soft:#3a2c12; --bad:#f08b81; --bad-soft:#3d1c19; --info:#86b3ea; --info-soft:#1b2c42;
+  --req:#b9a2ee; --req-soft:#2c2342; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111613; --surface:#18201b; --surface-2:#212a24; --fg:#e3eae5; --muted:#9aa89f; --line:#2e3a32;
+  --accent:#6db58f; --accent-fg:#0d1510; --accent-soft:#1f3b2c; --wood:#d99a5e; --wood-soft:#3a2b1d;
+  --ok:#6cc892; --ok-soft:#173726; --warn:#e3a640; --warn-soft:#3a2c12; --bad:#f08b81; --bad-soft:#3d1c19; --info:#86b3ea; --info-soft:#1b2c42;
+  --req:#b9a2ee; --req-soft:#2c2342; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:14px;line-height:1.45}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0}
+h1{font-size:1.75rem;line-height:1.1} h2{font-size:1.3rem} h3{font-size:1.05rem}
+.mono{font-family:var(--f-mono);font-size:.92em}
+.muted{color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+
+/* Top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+.top-in{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-weight:700;font-size:1.2rem;letter-spacing:.02em}
+.brand .mark{width:28px;height:28px;border-radius:50%;background:var(--wood);position:relative;flex:none}
+.brand .mark::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--surface)}
+.brand small{font-family:var(--f-body);font-weight:500;font-size:.75rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.top .grow{flex:1 1 180px;min-width:0}
+.search{display:flex;gap:6px;min-width:0}
+.search input{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.ctl{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted)}
+.ctl select{padding:6px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--fg);font-weight:500}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:6px 10px;cursor:pointer;font-size:.8rem;font-weight:600}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.clock{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);white-space:nowrap}
+
+/* Shell */
+.shell{display:grid;grid-template-columns:200px minmax(0,1fr) 300px;gap:0;min-height:calc(100vh - 60px)}
+.shell.noreq{grid-template-columns:200px minmax(0,1fr)}
+nav.side{border-right:1px solid var(--line);background:var(--surface);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
+nav.side .who{font-size:.75rem;color:var(--muted);padding:2px 8px 10px;border-bottom:1px solid var(--line);margin-bottom:6px}
+nav.side .who b{display:block;color:var(--fg);font-size:.9rem}
+nav.side button{display:flex;justify-content:space-between;align-items:center;text-align:left;border:0;background:none;padding:9px 10px;border-radius:var(--r);cursor:pointer;font-weight:500}
+nav.side button:hover{background:var(--surface-2)}
+nav.side button[aria-current="page"]{background:var(--accent-soft);color:var(--fg);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
+nav.side .cnt{font-family:var(--f-mono);font-size:.72rem;background:var(--surface-2);padding:1px 6px;border-radius:10px}
+main{min-width:0;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+aside.notes{border-left:1px solid var(--line);background:var(--surface);padding:16px;display:flex;flex-direction:column;gap:14px;font-size:.85rem}
+aside.notes h3{display:flex;gap:8px;align-items:center}
+aside.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+aside.notes .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-bottom:4px}
+@media (max-width:1100px){.shell,.shell.noreq{grid-template-columns:180px minmax(0,1fr)} aside.notes{grid-column:1 / -1;border-left:0;border-top:1px solid var(--line)}}
+@media (max-width:720px){.shell,.shell.noreq{grid-template-columns:minmax(0,1fr)} nav.side{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))} nav.side .who{width:100%}}
+
+/* Components */
+.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:10px}
+.head .sub{color:var(--muted);margin-top:4px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel > .ph{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.kpis{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.kpi{background:var(--surface);padding:12px 14px;flex:1 1 140px}
+.kpi .k{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.kpi .v{font-family:var(--f-display);font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.kpi .v small{font-family:var(--f-body);font-size:.75rem;font-weight:500;color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:var(--r);font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.btn.big{padding:14px 20px;font-size:1.05rem;min-height:52px}
+.btn[disabled]{opacity:.45;cursor:not-allowed;filter:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tbl-wrap{overflow-x:auto;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--surface-2)}
+td.r,th.r{text-align:right}
+td.mono{white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:.75rem;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.s-ootel{background:var(--warn-soft);color:var(--warn)}
+.s-planeeritud{background:var(--info-soft);color:var(--info)}
+.s-töös{background:var(--accent-soft);color:var(--accent)}
+.s-valmis{background:var(--ok-soft);color:var(--ok)}
+.s-vahelaos{background:var(--wood-soft);color:var(--wood)}
+.s-lõpetatud{background:var(--surface-2);color:var(--muted)}
+.s-bad{background:var(--bad-soft);color:var(--bad)}
+.bar{height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden;min-width:80px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.req{display:inline-flex;align-items:center;font-family:var(--f-mono);font-size:.68rem;font-weight:500;padding:1px 6px;border-radius:4px;background:var(--req-soft);color:var(--req);border:1px dashed var(--req);white-space:nowrap}
+.reqs{display:inline-flex;flex-wrap:wrap;gap:4px}
+.noreq-mode .req,.noreq-mode .reqs{display:none}
+.banner{border-radius:var(--r);padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.banner.warn{background:var(--warn-soft);color:var(--fg);border:1px solid var(--warn)}
+.banner.bad{background:var(--bad-soft);border:1px solid var(--bad)}
+.banner.ok{background:var(--ok-soft);border:1px solid var(--ok)}
+.banner.info{background:var(--info-soft);border:1px solid var(--info)}
+form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:.78rem;font-weight:600}
+.fld input,.fld select,.fld textarea{padding:9px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.fld .err{color:var(--bad);font-size:.78rem;font-weight:500}
+.fld.has-err input,.fld.has-err select{border-color:var(--bad)}
+.stages{display:flex;flex-wrap:wrap;gap:3px;min-width:300px}
+.stg{font-size:.7rem;padding:2px 6px;border-radius:4px;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.stg.valmis{background:var(--ok-soft);color:var(--ok)}
+.stg.töös{background:var(--accent);color:var(--accent-fg)}
+.gantt{display:grid;grid-template-columns:120px minmax(0,1fr);gap:6px 10px;align-items:center;font-size:.8rem}
+.gantt .track{position:relative;height:22px;background:var(--surface-2);border-radius:4px}
+.gantt .seg-b{position:absolute;top:3px;bottom:3px;border-radius:3px;background:var(--wood);color:#fff;font-size:.68rem;padding:0 6px;display:flex;align-items:center;overflow:hidden;white-space:nowrap}
+.gantt .seg-b.koost{background:var(--accent);color:var(--accent-fg)}
+.gantt .line{position:absolute;top:-4px;bottom:-4px;width:0;border-left:2px dashed var(--bad)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:10px}
+.card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.card.locked{background:var(--surface-2)}
+.card .t{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.card .op{font-family:var(--f-display);font-size:1.35rem;font-weight:700}
+.lock{font-size:.82rem;color:var(--warn);font-weight:500}
+.log{display:flex;flex-direction:column;font-size:.82rem}
+.log div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.log time{font-family:var(--f-mono);font-size:.75rem;color:var(--muted)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs button{border:0;background:none;padding:9px 14px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+pre.payload{background:var(--surface-2);border-radius:var(--r);padding:12px;font-family:var(--f-mono);font-size:.75rem;overflow-x:auto;margin:0;max-height:320px}
+.modal-bg{position:fixed;inset:0;background:rgba(10,15,12,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--surface);border-radius:var(--r);max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px;border:1px solid var(--line)}
+.toasts{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px;z-index:60;max-width:min(420px,calc(100vw - 32px))}
+.toast{background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:var(--r);font-size:.85rem;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.toast.bad{background:var(--bad);color:#fff}
+.drawing{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
+.drawing svg{display:block;width:100%;min-width:480px;height:auto}
+.drawing svg text{fill:var(--fg);font-family:var(--f-mono)}
+.drawing svg .ln{stroke:var(--fg);fill:none}
+.drawing svg .dim{stroke:var(--muted);fill:none;stroke-width:.8}
+.drawing svg .stamp{fill:none;stroke:var(--ok);stroke-width:2}
+.drawing svg .stamptx{fill:var(--ok)}
+.dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;font-size:.88rem}
+.dl dt{color:var(--muted)} .dl dd{margin:0;font-weight:500}
+.empty{padding:20px;text-align:center;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.toast{animation:tin .2s ease-out}@keyframes tin{from{transform:translateY(6px);opacity:.4}}}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* ===================== Andmed (näidisandmed, kõik mälus) ===================== */
+const OPS={
+  jark:{et:'Järkamine',en:'Cross-cutting',st:'SAAG-1'},
+  pikk:{et:'Pikilõikus ja höövel',en:'Rip & plane',st:'HÖÖVEL-1'},
+  cnc:{et:'CNC freesimine',en:'CNC milling',st:'CNC-1'},
+  trei:{et:'Treimine',en:'Turning',st:'TREI-2'},
+  puur:{et:'Puurimine',en:'Drilling',st:'PUUR-1'},
+  lihv:{et:'Lihvimine',en:'Sanding',st:'LIHV-1'},
+  varv:{et:'Värvimine',en:'Painting',st:'VÄRV-1'},
+  oli:{et:'Õlitamine',en:'Oiling',st:'VÄRV-1'},
+  tamp:{et:'Tamptrükk',en:'Pad printing',st:'TAMP-1'},
+  koost:{et:'Koostamine',en:'Assembly',st:'KOOST-1'},
+  pakk:{et:'Pakkimine',en:'Packing',st:'PAKK-1'}
+};
+const STATIONS=[
+  ['SAAG-1','Järkamissaag','Cross-cut saw'],['HÖÖVEL-1','Höövelpink','Planer'],['CNC-1','CNC-frees','CNC router'],
+  ['TREI-2','Treipink T2','Lathe T2'],['PUUR-1','Puurpink','Drill press'],['LIHV-1','Lihvimisliin','Sanding line'],
+  ['VÄRV-1','Värvi- ja õlituskamber','Paint & oil booth'],['TAMP-1','Tamptrükimasin','Pad printer'],
+  ['KOOST-1','Koostelaud','Assembly bench'],['PAKK-1','Pakkeliin','Packing line']];
+const LOCATIONS=[
+  ['VL-A1','Vaheladu, riiul A1'],['VL-A2','Vaheladu, riiul A2'],['VL-B1','Vaheladu, riiul B1'],['VL-B2','Vaheladu, riiul B2'],
+  ['TA-LIHV','Tootmisala, lihvimisliini ootealus'],['TA-KOOST','Tootmisala, koostelaua kõrval'],['VTL-01','Valmistoodete ladu, rida 1'],['VTL-02','Valmistoodete ladu, rida 2']];
+const MATS=[
+  {k:'M-KASK25',n:'Kasesaematerjal 25 mm',liik:'toore',u:'m³',ladu:3.40,loc:'TL-01'},
+  {k:'M-POOK40',n:'Pöögisaematerjal 40 mm',liik:'toore',u:'m³',ladu:1.80,loc:'TL-02'},
+  {k:'M-TELG6',n:'Metalltelg Ø6 × 80',liik:'lisakomponent',u:'tk',ladu:900,loc:'LL-03'},
+  {k:'M-NOOR',n:'Puuvillane nöör',liik:'lisakomponent',u:'m',ladu:150,loc:'LL-04'},
+  {k:'M-OLI',n:'Puiduõli, EN 71-3',liik:'viimistlus',u:'l',ladu:38,loc:'LL-07'},
+  {k:'M-VARV',n:'Veepõhine värv, EN 71-3',liik:'viimistlus',u:'l',ladu:22,loc:'LL-07'},
+  {k:'M-KARPS',n:'Pakend, karp S',liik:'pakend',u:'tk',ladu:600,loc:'PL-01'},
+  {k:'M-KARPL',n:'Pakend, karp L',liik:'pakend',u:'tk',ladu:20,loc:'PL-02'}];
+const S_=(op,su,mi)=>({op,su,mi});
+const PRODUCTS={
+  JANES:{n:'Jänes ratastel',en:'Rabbit on wheels',
+    comps:[
+      {k:'KERE',n:'Kere',en:'Body',per:1,dw:{nr:'JN-1041',v:3,from:'12.10.2026',old:'v2 (aegunud 12.10.2026)'},shape:'body',st:[S_('jark',.3,.2),S_('pikk',.3,.3),S_('cnc',.5,1.2),S_('lihv',.3,.6),S_('varv',.3,.5),S_('tamp',.3,.3)]},
+      {k:'RATAS',n:'Rattad',en:'Wheels',per:4,dw:{nr:'JN-1043',v:2,from:'03.03.2026',old:'v1 (aegunud 03.03.2026)'},shape:'wheel',st:[S_('jark',.3,.1),S_('trei',.5,.5),S_('puur',.3,.2),S_('lihv',.3,.3),S_('oli',.2,.2)]},
+      {k:'KORV',n:'Kõrvad',en:'Ears',per:2,dw:{nr:'JN-1042',v:1,from:'15.01.2026',old:null},shape:'ear',st:[S_('jark',.2,.1),S_('cnc',.4,.4),S_('lihv',.3,.3),S_('varv',.2,.2)]}],
+    koost:[S_('koost',.3,1.0),S_('pakk',.3,.5)],
+    bom:[['M-KASK25',.0006],['M-TELG6',2],['M-OLI',.01],['M-VARV',.005],['M-KARPS',1]]},
+  AUTO:{n:'Puitveoauto',en:'Wooden truck',
+    comps:[
+      {k:'KABIIN',n:'Kabiin',en:'Cab',per:1,dw:{nr:'JN-2010',v:4,from:'01.09.2026',old:'v3 (aegunud 01.09.2026)'},shape:'body',st:[S_('jark',.3,.2),S_('pikk',.3,.3),S_('cnc',.5,1.0),S_('lihv',.3,.5),S_('oli',.2,.3)]},
+      {k:'KAST',n:'Kast',en:'Cargo box',per:1,dw:{nr:'JN-2011',v:2,from:'20.05.2026',old:'v1 (aegunud 20.05.2026)'},shape:'body',st:[S_('jark',.3,.2),S_('pikk',.3,.3),S_('lihv',.3,.4),S_('oli',.2,.3)]},
+      {k:'RATAS',n:'Rattad',en:'Wheels',per:4,dw:{nr:'JN-1043',v:2,from:'03.03.2026',old:'v1 (aegunud 03.03.2026)'},shape:'wheel',st:[S_('jark',.3,.1),S_('trei',.5,.5),S_('puur',.3,.2),S_('lihv',.3,.3),S_('oli',.2,.2)]}],
+    koost:[S_('koost',.3,1.2),S_('pakk',.3,.5)],
+    bom:[['M-KASK25',.0009],['M-POOK40',.0004],['M-TELG6',2],['M-OLI',.015],['M-KARPS',1]]},
+  TOUK:{n:'Kõnnitõuk',en:'Push walker',
+    comps:[
+      {k:'RAAM',n:'Raam',en:'Frame',per:1,dw:{nr:'JN-3001',v:2,from:'11.06.2026',old:'v1 (aegunud 11.06.2026)'},shape:'body',st:[S_('jark',.3,.4),S_('pikk',.3,.5),S_('cnc',.5,1.5),S_('lihv',.3,.8),S_('oli',.3,.4)]},
+      {k:'KAEPIDE',n:'Käepide',en:'Handle',per:1,dw:{nr:'JN-3002',v:1,from:'11.06.2026',old:null},shape:'ear',st:[S_('jark',.3,.2),S_('trei',.5,.6),S_('lihv',.3,.3),S_('oli',.2,.2)]},
+      {k:'RATAS',n:'Rattad',en:'Wheels',per:4,dw:{nr:'JN-3003',v:1,from:'11.06.2026',old:null},shape:'wheel',st:[S_('jark',.3,.1),S_('trei',.5,.6),S_('puur',.3,.2),S_('lihv',.3,.3),S_('oli',.2,.2)]}],
+    koost:[S_('koost',.3,2.0),S_('pakk',.3,.8)],
+    bom:[['M-POOK40',.004],['M-TELG6',2],['M-NOOR',1.2],['M-OLI',.03],['M-KARPL',1]]}
+};
+const USERS={planeerija:'Kadri K.',myyk:'Marten M.',tootmine:'Rasmus R.',ladu:'Liis L.'};
+const ROLE_NAMES={planeerija:['Tootmise planeerija','Production planner'],myyk:['Müügitöötaja','Sales'],tootmine:['Tootmistöötaja','Operator'],ladu:['Laotöötaja','Warehouse']};
+
+/* ===================== Abifunktsioonid ===================== */
+const S={role:'planeerija',lang:'et',showReq:true,view:'orders',sel:null,filter:'kõik',q:'',station:'LIHV-1',whTab:'issue',
+  now:new Date(2026,10,26,9,40),seq:143,orders:[],bookings:[],log:[],draft:null,errors:{},exportFail:false,pendingLoc:[],modal:null,lastQ:''};
+const L=(et,en)=>S.lang==='et'?et:en;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const fd=d=>d?`${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`:'–';
+const fdt=d=>d?`${fd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`:'–';
+const ft=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const fq=(v,u)=>(u==='m³'||u==='l'||u==='m')?(+v).toLocaleString('et-EE',{maximumFractionDigits:3}):Math.round(v).toLocaleString('et-EE');
+const mat=k=>MATS.find(m=>m.k===k);
+const opName=k=>L(OPS[k].et,OPS[k].en);
+const req=(...ids)=>`<span class="reqs">${ids.map(i=>`<span class="req" title="${L('Seotud nõue või kasutusmall','Linked requirement or use case')}">${i}</span>`).join('')}</span>`;
+const pill=(s,txt)=>`<span class="pill s-${s}">${esc(txt||statusName(s))}</span>`;
+function statusName(s){return({ootel:L('Ootel','On hold'),planeeritud:L('Planeeritud','Planned'),'töös':L('Töös','In progress'),valmis:L('Valmis','Done'),vahelaos:L('Vahelaos','In buffer'),'lõpetatud':L('Lõpetatud','Closed')})[s]||s}
+function addWH(d,h){let t=new Date(d);let m=Math.round(h*60);
+  const norm=()=>{for(let g=0;g<400;g++){const dy=t.getDay(),hr=t.getHours()+t.getMinutes()/60;
+    if(dy===0||dy===6||hr>=16){t.setDate(t.getDate()+1);t.setHours(8,0,0,0);continue}
+    if(hr<8)t.setHours(8,0,0,0);break}};
+  norm();while(m>0){const e=new Date(t);e.setHours(16,0,0,0);const av=(e-t)/60000;if(m<=av){t=new Date(t.getTime()+m*60000);m=0}else{m-=av;t=e;norm()}}return t}
+const stH=(s,q)=>s.su+s.mi*q/60;
+function logEv(order,msg){S.log.unshift({t:new Date(S.now),user:USERS[S.role],role:S.role,order,msg})}
+function tick(min){S.now=new Date(S.now.getTime()+min*60000)}
+function toast(msg,bad){const el=document.createElement('div');el.className='toast'+(bad?' bad':'');el.textContent=msg;document.getElementById('toasts').appendChild(el);setTimeout(()=>el.remove(),4200)}
+
+/* ===================== Domeeniloogika ===================== */
+function buildOrder(nr,kt,pk,q,due){const p=PRODUCTS[pk];
+  const batches=p.comps.map(c=>({id:`${nr}-${c.k}`,comp:c.k,name:c.n,en:c.en,qty:q*c.per,dw:c.dw,shape:c.shape,loc:null,
+    stages:c.st.map(s=>({op:s.op,h:stH(s,q*c.per),status:'ootel',start:null,end:null,by:null,scrap:0,downMin:0,downWhy:''}))}));
+  batches.push({id:`${nr}-KOOST`,comp:'KOOST',name:'Koostamine ja pakkimine',en:'Assembly & packing',qty:q,koost:true,loc:null,
+    stages:p.koost.map(s=>({op:s.op,h:stH(s,q),status:'ootel',start:null,end:null,by:null,scrap:0,downMin:0,downWhy:''}))});
+  return{nr,kt,pk,q,due,status:'planeeritud',hold:'',issued:false,planStart:null,planEnd:null,batches,exported:null,created:new Date(S.now)}}
+function compHours(o){return o.batches.filter(b=>!b.koost).map(b=>b.stages.reduce((a,s)=>a+s.h,0))}
+function koostHours(o){return o.batches.find(b=>b.koost).stages.reduce((a,s)=>a+s.h,0)}
+function schedule(o,start){const ch=compHours(o),mx=Math.max(...ch);o.planStart=start;
+  o.batches.filter(b=>!b.koost).forEach((b,i)=>{b.planStart=addWH(start,mx-ch[i]);b.planEnd=addWH(start,mx)});
+  const kb=o.batches.find(b=>b.koost);kb.planStart=addWH(start,mx);kb.planEnd=addWH(start,mx+koostHours(o));o.planEnd=kb.planEnd}
+function remaining(b){return b.stages.reduce((a,s)=>a+(s.status==='valmis'?0:s.status==='töös'?s.h*.5:s.h),0)}
+function delayH(o){return o.batches.reduce((a,b)=>a+b.stages.reduce((x,s)=>x+s.downMin/60+(s.scrap?s.scrap*0.01+0.3:0),0),0)}
+function forecast(o){if(o.status==='lõpetatud'||o.status==='valmis'){const kb=o.batches.find(b=>b.koost);return kb.stages[kb.stages.length-1].end||o.planEnd}
+  if(o.status==='ootel')return null;
+  const comps=o.batches.filter(b=>!b.koost).map(remaining);const base=new Date(Math.max(S.now,o.planStart||S.now));
+  return addWH(base,Math.max(0,...comps)+remaining(o.batches.find(b=>b.koost))+delayH(o))}
+function lateDays(o){const f=forecast(o);if(!f)return 0;const due=new Date(o.due);due.setHours(16,0,0,0);return f>due?Math.ceil((f-due)/86400000):0}
+function progress(o){let t=0,d=0;o.batches.forEach(b=>b.stages.forEach(s=>{t+=s.h;if(s.status==='valmis')d+=s.h;else if(s.status==='töös')d+=s.h*.4}));return t?Math.round(d/t*100):0}
+function batchState(b){if(b.stages.every(s=>s.status==='valmis'))return b.loc&&b.loc.startsWith('VL')?'vahelaos':'valmis';return b.stages.some(s=>s.status!=='ootel')?'töös':'ootel'}
+function compsReady(o){return o.batches.filter(b=>!b.koost).every(b=>b.stages.every(s=>s.status==='valmis'))}
+function backlogH(except){return S.orders.filter(o=>o!==except&&(o.status==='planeeritud'||o.status==='töös')).reduce((a,o)=>a+Math.max(0,...o.batches.filter(b=>!b.koost).map(remaining))*.35,0)}
+function bookedFree(k){const m=mat(k);const res=S.bookings.filter(b=>b.mat===k&&!b.issued).reduce((a,b)=>a+b.qty,0);return{stock:m.ladu,res,free:m.ladu-res}}
+function needFor(pk,q){return PRODUCTS[pk].bom.map(([k,per])=>({k,need:per*q}))}
+function currentStage(b){return b.stages.find(s=>s.status==='töös')||b.stages.find(s=>s.status==='ootel')}
+function stageLock(o,b,i){
+  if(o.status==='ootel')return L('Tellimus on ootel: ','Order on hold: ')+o.hold;
+  if(!o.issued)return L('Ootab materjali väljastust laost (K08)','Waiting for material issue (K08)');
+  if(b.koost&&!compsReady(o)){const miss=o.batches.filter(x=>!x.koost&&!x.stages.every(s=>s.status==='valmis')).map(x=>L(x.name,x.en));return L('Koostamist ei saa alustada, pooleli: ','Cannot assemble, still in progress: ')+miss.join(', ')}
+  if(i>0&&b.stages[i-1].status!=='valmis')return L('Eelmine etapp pooleli: ','Previous step not done: ')+opName(b.stages[i-1].op);
+  return null}
+function refreshOrderStatus(o){if(o.status==='ootel'||o.status==='lõpetatud')return;
+  const kb=o.batches.find(b=>b.koost);if(kb.stages.every(s=>s.status==='valmis')){o.status='valmis';return}
+  o.status=o.batches.some(b=>b.stages.some(s=>s.status!=='ootel'))?'töös':'planeeritud'}
+
+/* ===================== Algandmed ===================== */
+function seed(){
+  const now=S.now;
+  // PT-0135 lõpetatud
+  let o=buildOrder('PT-2026-0135','KT-58812','JANES',100,new Date(2026,10,20));schedule(o,new Date(2026,10,12,8));
+  o.issued=true;o.batches.forEach(b=>{b.stages.forEach((s,i)=>{s.status='valmis';s.start=addWH(b.planStart,i*.8);s.end=addWH(s.start,s.h);s.by='Rasmus R.'});b.loc=b.koost?'VTL-01':'TA-KOOST'});
+  o.status='lõpetatud';o.exported={at:new Date(2026,10,19,14,5),ok:true};S.orders.push(o);
+  // PT-0141 töös, Jänes 200
+  o=buildOrder('PT-2026-0141','KT-58907','JANES',200,new Date(2026,10,30));schedule(o,new Date(2026,10,23,8));o.issued=true;o.status='töös';
+  const [kere,ratas,korv]=o.batches;
+  kere.stages.forEach((s,i)=>{if(i<3){s.status='valmis';s.start=addWH(new Date(2026,10,23,8),i*2);s.end=addWH(s.start,s.h);s.by='Rasmus R.'}});
+  kere.stages[3].status='töös';kere.stages[3].start=new Date(2026,10,26,8,15);kere.stages[3].by='Rasmus R.';
+  ratas.stages.forEach((s,i)=>{s.status='valmis';s.start=addWH(new Date(2026,10,23,8),i*1.5);s.end=addWH(s.start,s.h);s.by='Toomas T.'});ratas.loc='VL-B2';
+  korv.stages[0].status='valmis';korv.stages[0].start=new Date(2026,10,24,9);korv.stages[0].end=new Date(2026,10,24,10,10);korv.stages[0].by='Toomas T.';
+  korv.stages[1].status='töös';korv.stages[1].start=new Date(2026,10,25,13);korv.stages[1].by='Toomas T.';korv.stages[1].downMin=35;korv.stages[1].downWhy='Masina rike (spindli ülekuumenemine)';
+  S.orders.push(o);
+  [['M-KASK25',.12],['M-TELG6',400],['M-OLI',2],['M-VARV',1],['M-KARPS',200]].forEach(([k,q])=>S.bookings.push({order:o.nr,mat:k,qty:q,issued:true,used:0,scrap:0}));
+  // PT-0142 planeeritud, Puitveoauto 120
+  o=buildOrder('PT-2026-0142','KT-58931','AUTO',120,new Date(2026,11,9));schedule(o,new Date(2026,11,1,8));S.orders.push(o);
+  needFor('AUTO',120).forEach(n=>S.bookings.push({order:o.nr,mat:n.k,qty:n.need,issued:false,used:0,scrap:0}));
+  // PT-0139 ootel, Kõnnitõuk 50 (pakend puudu)
+  o=buildOrder('PT-2026-0139','KT-58870','TOUK',50,new Date(2026,11,4));o.status='ootel';o.hold='Pakend, karp L: vaja 50 tk, vaba 20 tk. Ostuvajadus edastatud 24.11.2026.';S.orders.push(o);
+  S.log=[
+    {t:new Date(2026,10,25,13,45),user:'Toomas T.',role:'tootmine',order:'PT-2026-0141',msg:'Seisak 35 min CNC-1: Masina rike (spindli ülekuumenemine)'},
+    {t:new Date(2026,10,25,11,20),user:'Liis L.',role:'ladu',order:'PT-2026-0141',msg:'Rattad (PT-2026-0141-RATAS) viidud asukohta VL-B2'},
+    {t:new Date(2026,10,24,15,2),user:'Kadri K.',role:'planeerija',order:'PT-2026-0142',msg:'Tellimus kinnitatud, materjal broneeritud (5 rida)'},
+    {t:new Date(2026,10,24,9,30),user:'Kadri K.',role:'planeerija',order:'PT-2026-0139',msg:'Tellimus jäetud ootele: pakend karp L puudu'}];
+}
+seed();
+
+/* ===================== Kavandi märkmed vaadete kaupa ===================== */
+const NOTES={
+  orders:{uc:['K02'],req:['F-01','F-08','F-13','U-02','+-02'],
+    check:['Tellimuste nimekiri staatuse, edenemise ja prognoosiga','Filtreerimine staatuse järgi ja otsing','Hilinemise märgistus (prognoos vs tähtaeg)','Müügitöötaja ei näe nuppu "Uus tootmistellimus"'],
+    sim:['Andmed on näidisandmed brauseri mälus, lehe laadimisel algväärtustatakse','Kasutaja autentimist ei ole, roll valitakse ülaribalt']},
+  new:{uc:['K01'],req:['F-01','F-02','F-03','F-04','F-05','F-13','R-02','R-04'],
+    check:['Kohustuslike väljade ja vormingu kontroll (R-04)','Sama klienditellimuse topeltregistreerimise keeld (R-02)','Komponentide ja materjalide automaatne sidumine toote koosseisu järgi (F-02)','Materjali vaba kogus = laoseis − broneeritud; puudujäägi korral jääb tellimus ootele (F-04)','Ajaplaan: komponendid planeeritakse lõpetama samal ajal, seejärel koostamine (F-03)','Kinnitamine broneerib materjali ühe toiminguna (F-05)'],
+    sim:['Võimsuse kontroll on lihtsustatud (järjekorra koormus × koefitsient), päris masinakalendrit ei ole','Klienditellimus sisestatakse käsitsi, e-posti liidest ei ole','Ostuvajadus ainult märgitakse, ostuprotsess on skoobist väljas']},
+  detail:{uc:['K02','K03'],req:['F-01','F-02','F-07','F-09','F-10','F-11','F-13','U-02','R-01','+-01'],
+    check:['Tellimuse seis, komponentide seisund ja asukoht ühes vaates, teisi dokumente avamata (U-02)','Koostamiseks valmis komponentide loendur (F-11)','Prognoos uueneb pärast seisaku või praagi registreerimist (F-13)','Tegevuste ajalugu: kes, millal, mida (R-01)','Lõpetamine on lubatud ainult valmis tellimusel; tekib majandustarkvarale saadetav kirje (K03, +-01)'],
+    sim:['Prognoos = jäänud planeeritud töötunnid + seisakud, 8 h tööpäev; tegelikku planeerimisalgoritmi ei ole','Majandustarkvara liides on simuleeritud: kuvatakse saadetav andmepakett, päris päringut ei tehta','Liidese viga saab esile kutsuda lülitiga']},
+  worker:{uc:['K04','K05','K06','K07'],req:['F-06','F-07','F-09','F-10','F-11','F-12','U-01','R-02','+-03','+-05'],
+    check:['Tahvelarvuti vaade suurte nuppudega, ainult valitud tööjaama tööd (U-01, +-03)','Alusta/Lõpeta salvestab aja ja töötaja (F-06); korduvat vajutust ei registreerita (R-02)','Etappi ei saa alustada enne eelmise lõppu või materjali väljastust','Koostamine on lukus, kuni kõik komponendid on valmis (F-11)','Kuvatakse ainult kehtiv joonise versioon (F-10)','Praak ja seisak koos põhjusega (F-09, F-12); praak broneerib lisamaterjali'],
+    sim:['Joonis on skemaatiline SVG, mitte CAD-fail; pärisjoonise hoiukoht on lahtine küsimus K-05','Seadmetelt andmeid automaatselt ei loeta (+-05), kõik sisestatakse käsitsi','Ribakoodi skaneerimist ei ole']},
+  wh:{uc:['K07','K08'],req:['F-04','F-05','F-07','F-08','F-09','+-01'],
+    check:['Broneeritud materjali väljastamine tellimusele (K08); laoseis väheneb','Valmis komponendi asukoha registreerimine või muutmine (K07, F-07)','Laoseis, broneeritud ja vaba kogus materjalide kaupa (F-04)','Materjali saabumise registreerimine vabastab ootel tellimuse kontrolliks'],
+    sim:['Materjali saabumine on simulatsiooninupp (ostuprotsess on skoobist väljas)','Laokohad on näidisloend, laokohtade märgistus on lahtine küsimus K-07']},
+  log:{uc:['—'],req:['R-01','S-01'],check:['Kõik prototüübis tehtud registreeringud koos tegija, aja ja tellimusega'],sim:['Logi kaob lehe uuesti laadimisel (R-03 püsivus ei ole prototüübis teostatud)','Tehniliste vigade logi (S-01) ei ole teostatud']},
+  search:{uc:['K02'],req:['F-08','F-07'],check:['Otsing tellimuse numbri, klienditellimuse, komponendipartii, toote, asukoha või materjali järgi'],sim:['Otsing on lihtne alamsõne vaste, mitte täistekstiotsing']}
+};
+
+/* ===================== Vaated ===================== */
+function navItems(){const r=S.role;const cnt=st=>S.orders.filter(o=>o.status===st).length;
+  const items={
+    planeerija:[['orders',L('Tootmistellimused','Production orders'),S.orders.filter(o=>o.status!=='lõpetatud').length],['new',L('Uus tootmistellimus','New order')],['wh-stock',L('Laoseis','Stock')],['log',L('Tegevuslogi','Activity log')]],
+    myyk:[['orders',L('Tellimuste seis','Order status'),S.orders.filter(o=>o.status!=='lõpetatud').length]],
+    tootmine:[['worker',L('Minu tööjaam','My workstation')]],
+    ladu:[['wh-issue',L('Väljastamine','Issue'),S.bookings.filter(b=>!b.issued&&S.orders.find(o=>o.nr===b.order)?.status!=='ootel').length?new Set(S.bookings.filter(b=>!b.issued&&S.orders.find(o=>o.nr===b.order)?.status!=='ootel').map(b=>b.order)).size:0],['wh-loc',L('Asukohad','Locations'),pendingLocations().length],['wh-stock',L('Laoseis','Stock')]]};
+  return items[r]}
+function curNavKey(){if(S.view==='wh')return 'wh-'+S.whTab;if(S.view==='detail')return 'orders';return S.view}
+function pendingLocations(){const out=[];S.orders.forEach(o=>o.batches.forEach(b=>{if(b.stages.every(s=>s.status==='valmis')&&!b.loc&&o.status!=='lõpetatud')out.push([o,b])}));return out}
+
+function render(){
+  document.documentElement.lang=S.lang;
+  const app=document.getElementById('app');
+  const noteKey=S.view==='wh'?'wh':S.view;const N=NOTES[noteKey];
+  app.className=S.showReq?'':'noreq-mode';
+  app.innerHTML=`
+  <header class="top"><div class="top-in">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><div>MES<br><small>Puidutööstus OÜ · ${L('prototüüp','prototype')}</small></div></div>
+    <form class="search grow" data-act="search" role="search">
+      <input id="q" type="search" placeholder="${L('Otsi: tellimus, KT-nr, partii, asukoht, materjal','Search: order, customer PO, batch, location, material')}" value="${esc(S.lastQ)}" aria-label="${L('Otsing','Search')}">
+      <button class="btn" type="submit">${L('Otsi','Search')}</button>
+    </form>
+    <label class="ctl" for="role">${L('Roll','Role')} ${req('+-02')}
+      <select id="role" data-act="role">${Object.keys(ROLE_NAMES).map(k=>`<option value="${k}" ${S.role===k?'selected':''}>${ROLE_NAMES[k][S.lang==='et'?0:1]}</option>`).join('')}</select></label>
+    <div class="ctl"><span class="seg" role="group" aria-label="${L('Keel','Language')}"><button data-act="lang" data-v="et" aria-pressed="${S.lang==='et'}">ET</button><button data-act="lang" data-v="en" aria-pressed="${S.lang==='en'}">EN</button></span>${req('U-03')}</div>
+    <div class="ctl"><span class="seg"><button data-act="toggleReq" aria-pressed="${S.showReq}">${L('Nõuete kiht','Requirements layer')}</button></span></div>
+    <span class="clock" title="${L('Simuleeritud kell: iga registreering liigutab aega edasi','Simulated clock: each registration advances time')}">⏱ ${fdt(S.now)}</span>
+  </div></header>
+  <div class="shell ${S.showReq?'':'noreq'}">
+    <nav class="side" aria-label="${L('Põhimenüü','Main menu')}">
+      <div class="who"><b>${esc(USERS[S.role])}</b>${ROLE_NAMES[S.role][S.lang==='et'?0:1]}</div>
+      ${navItems().map(([k,t,c])=>`<button data-act="nav" data-v="${k}" ${curNavKey()===k?'aria-current="page"':''}><span>${t}</span>${c?`<span class="cnt">${c}</span>`:''}</button>`).join('')}
+    </nav>
+    <main id="main">${renderView()}</main>
+    ${S.showReq&&N?`<aside class="notes" aria-label="${L('Kavandi märkmed','Design notes')}">
+      <h3>${L('Kavandi märkmed','Design notes')}</h3>
+      <div><div class="lbl">${L('Kasutusmall (P3)','Use case (P3)')}</div>${req(...N.uc)}</div>
+      <div><div class="lbl">${L('Nõuded (P2)','Requirements (P2)')}</div>${req(...N.req)}</div>
+      <div><div class="lbl">${L('Mida saab kontrollida','What can be checked')}</div><ul>${N.check.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+      <div><div class="lbl">${L('Simuleeritud või teostamata','Simulated or not built')}</div><ul>${N.sim.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+      <button class="btn" data-act="reset">${L('Taasta algandmed','Reset sample data')}</button>
+    </aside>`:''}
+  </div>
+  ${S.modal?`<div class="modal-bg" data-act="closeModalBg"><div class="modal" role="dialog" aria-modal="true">${S.modal}</div></div>`:''}`;
+}
+function renderView(){switch(S.view){
+  case 'orders':return vOrders();case 'new':return vNew();case 'detail':return vDetail();case 'worker':return vWorker();
+  case 'wh':return vWh();case 'log':return vLog();case 'search':return vSearch();default:return ''}}
+
+/* ---- Tellimuste nimekiri (K02, F-01) ---- */
+function vOrders(){
+  const flt=['kõik','ootel','planeeritud','töös','valmis','lõpetatud'];
+  const list=S.orders.filter(o=>S.filter==='kõik'||o.status===S.filter).sort((a,b)=>b.nr.localeCompare(a.nr));
+  return `<div class="head"><div><h1>${S.role==='myyk'?L('Tellimuste seis','Order status'):L('Tootmistellimused','Production orders')} ${req('K02','F-01','U-02')}</h1>
+    <div class="sub">${L('Kõik tellimused ühes kohas: staatus, edenemine ja eeldatav valmimine.','All orders in one place: status, progress and expected completion.')}</div></div>
+    ${S.role==='planeerija'?`<button class="btn pri" data-act="nav" data-v="new">+ ${L('Uus tootmistellimus','New production order')}</button>`:''}</div>
+  <div class="row" role="group" aria-label="${L('Filter','Filter')}">${flt.map(f=>`<button class="btn" data-act="filter" data-v="${f}" aria-pressed="${S.filter===f}" style="${S.filter===f?'background:var(--accent-soft);border-color:var(--accent)':''}">${f==='kõik'?L('Kõik','All'):statusName(f)} <span class="muted num">${f==='kõik'?S.orders.length:S.orders.filter(o=>o.status===f).length}</span></button>`).join('')}</div>
+  <div class="panel"><div class="tbl-wrap"><table>
+    <thead><tr><th>${L('Tellimus','Order')}</th><th>${L('Klienditellimus','Customer PO')}</th><th>${L('Toode','Product')}</th><th class="r">${L('Kogus','Qty')}</th><th>${L('Staatus','Status')}</th><th>${L('Edenemine','Progress')} ${req('F-13')}</th><th>${L('Tähtaeg','Due')}</th><th>${L('Prognoos','Forecast')} ${req('F-13')}</th></tr></thead>
+    <tbody>${list.map(o=>{const f=forecast(o),late=lateDays(o),p=progress(o);return `<tr class="click" data-act="open" data-v="${o.nr}" tabindex="0">
+      <td class="mono"><b>${o.nr}</b></td><td class="mono">${o.kt}</td><td>${L(PRODUCTS[o.pk].n,PRODUCTS[o.pk].en)}</td><td class="r num">${o.q}</td>
+      <td>${pill(o.status)}</td><td><div class="row" style="flex-wrap:nowrap"><div class="bar" style="flex:1"><i style="width:${p}%"></i></div><span class="num muted">${p}%</span></div></td>
+      <td class="num">${fd(o.due)}</td><td class="num">${f?fd(f):'<span class="muted">–</span>'} ${late&&o.status!=='lõpetatud'?`<span class="pill s-bad">+${late} ${L('p','d')}</span>`:''}</td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${L('Selle staatusega tellimusi ei ole','No orders with this status')}</td></tr>`}</tbody></table></div></div>`}
+
+/* ---- Uus tootmistellimus (K01) ---- */
+function vNew(){
+  if(S.role!=='planeerija')return noAccess();
+  const d=S.draft||{kt:'',pk:'',q:'',due:'',checked:false};const e=S.errors;
+  const fld=(id,label,inp,r)=>`<div class="fld ${e[id]?'has-err':''}"><label for="${id}">${label} ${r||''}</label>${inp}${e[id]?`<span class="err" id="${id}-err">${esc(e[id])}</span>`:''}</div>`;
+  let out=`<div class="head"><div><h1>${L('Uus tootmistellimus','New production order')} ${req('K01','F-01')}</h1>
+    <div class="sub">${L('Klienditellimuse põhjal. Süsteem seob komponendid ja materjalid, kontrollib saadavust ja aega ning broneerib materjali.','From a confirmed customer order. The system links components and materials, checks availability and time, and reserves material.')}</div></div>
+    <button class="btn" data-act="nav" data-v="orders">${L('Tagasi','Back')}</button></div>
+  <div class="panel"><div class="ph"><h2>1. ${L('Tellimuse andmed','Order details')}</h2>${req('R-04','R-02')}</div>
+  <form class="f" data-act="checkNew" novalidate>
+    ${fld('kt',L('Klienditellimuse nr *','Customer PO no. *'),`<input id="kt" name="kt" value="${esc(d.kt)}" placeholder="KT-59001" autocomplete="off">`)}
+    ${fld('pk',L('Toode *','Product *'),`<select id="pk" name="pk"><option value="">${L('Vali toode','Choose product')}</option>${Object.entries(PRODUCTS).map(([k,p])=>`<option value="${k}" ${d.pk===k?'selected':''}>${L(p.n,p.en)}</option>`).join('')}</select>`)}
+    ${fld('q2',L('Kogus, tk *','Quantity, pcs *'),`<input id="q2" name="q" inputmode="numeric" value="${esc(d.q)}" placeholder="150">`)}
+    ${fld('due',L('Soovitud tähtaeg *','Requested due date *'),`<input id="due" name="due" type="date" value="${esc(d.dueStr||'')}">`)}
+    <div class="fld" style="justify-content:flex-end"><button class="btn pri" type="submit">${L('Kontrolli materjali ja aega','Check material and time')}</button></div>
+  </form>
+  <div class="row muted" style="font-size:.8rem">${L('Proovi: jäta väli tühjaks, sisesta KT-58907 (juba olemas) või telli 60 kõnnituuka (pakend ei jätku).','Try: leave a field empty, enter KT-58907 (already exists) or order 60 push walkers (not enough packaging).')}</div></div>`;
+  if(d.checked){const p=PRODUCTS[d.pk];const needs=needFor(d.pk,d.q).map(n=>({...n,...bookedFree(n.k)}));const short=needs.filter(n=>n.need>n.free+1e-9);
+    const tmp=buildOrder('UUS','',d.pk,d.q,d.due);const start=addWH(S.now,backlogH(null)+2);schedule(tmp,start);
+    const dueEnd=new Date(d.due);dueEnd.setHours(16,0,0,0);const late=tmp.planEnd>dueEnd;
+    out+=`<div class="grid2">
+    <div class="panel"><div class="ph"><h2>2. ${L('Komponendid','Components')}</h2>${req('F-02')}</div>
+      <div class="tbl-wrap"><table><thead><tr><th>${L('Komponent','Component')}</th><th class="r">${L('Kogus','Qty')}</th><th>${L('Kehtiv joonis','Current drawing')}</th><th class="r">${L('Töötunnid','Hours')}</th></tr></thead><tbody>
+      ${tmp.batches.map(b=>`<tr><td>${L(b.name,b.en)}</td><td class="r num">${b.qty}</td><td class="mono">${b.dw?`${b.dw.nr} v${b.dw.v}`:'–'}</td><td class="r num">${b.stages.reduce((a,s)=>a+s.h,0).toFixed(1)}</td></tr>`).join('')}
+      </tbody></table></div></div>
+    <div class="panel"><div class="ph"><h2>3. ${L('Materjali saadavus','Material availability')}</h2>${req('F-04','AS-03')}</div>
+      <div class="tbl-wrap"><table><thead><tr><th>${L('Materjal','Material')}</th><th class="r">${L('Vaja','Need')}</th><th class="r">${L('Laos','Stock')}</th><th class="r">${L('Broneeritud','Reserved')}</th><th class="r">${L('Vaba','Free')}</th><th></th></tr></thead><tbody>
+      ${needs.map(n=>{const m=mat(n.k),ok=n.need<=n.free+1e-9;return `<tr><td>${esc(m.n)} <span class="muted">(${m.liik})</span></td><td class="r num">${fq(n.need,m.u)} ${m.u}</td><td class="r num">${fq(n.stock,m.u)}</td><td class="r num">${fq(n.res,m.u)}</td><td class="r num">${fq(n.free,m.u)}</td><td>${ok?pill('valmis','OK'):`<span class="pill s-bad">${L('puudu','short')} ${fq(n.need-n.free,m.u)}</span>`}</td></tr>`}).join('')}
+      </tbody></table></div></div></div>
+    <div class="panel"><div class="ph"><h2>4. ${L('Ajaplaan ja vaba aeg','Schedule and capacity')}</h2>${req('F-03','AS-08','AS-09')}</div>
+      <p class="muted" style="margin:0">${L('Komponentide algus nihutatakse nii, et kõik valmiksid samal ajal ja koostamine ei ootaks üksikut detaili.','Component starts are shifted so all finish together and assembly does not wait for one part.')}</p>
+      ${gantt(tmp,dueEnd)}
+      <dl class="dl"><dt>${L('Varaseim algus (järjekorda arvestades)','Earliest start (given queue)')}</dt><dd class="num">${fdt(tmp.planStart)}</dd>
+      <dt>${L('Planeeritud valmimine','Planned completion')}</dt><dd class="num">${fdt(tmp.planEnd)} ${late?`<span class="pill s-bad">${L('ei mahu tähtaega','misses due date')}</span>`:pill('valmis',L('mahub tähtaega','fits due date'))}</dd></dl>
+    </div>
+    <div class="panel"><div class="ph"><h2>5. ${L('Otsus','Decision')}</h2>${req('F-05','F-13')}</div>
+      ${short.length?`<div class="banner warn"><div><b>${L('Materjali ei jätku.','Not enough material.')}</b> ${short.map(n=>esc(mat(n.k).n)).join(', ')}. ${L('Tellimust ei saa kinnitada; see salvestatakse ootel olekus ja ostuvajadus märgitakse.','The order cannot be confirmed; it is saved as on hold and a purchase need is flagged.')}</div>
+        <button class="btn warn" data-act="saveHold">${L('Salvesta ootel tellimusena','Save as on hold')}</button></div>`:
+      `${late?`<div class="banner warn"><div>${L('Soovitud tähtaeg ei mahu. Kliendile antakse kinnitus prognoositud kuupäevaga','The due date does not fit. The customer is confirmed with forecast date')} <b class="num">${fd(tmp.planEnd)}</b>.</div></div>`:''}
+      <div class="row"><button class="btn pri big" data-act="confirmNew">${L('Kinnita ja broneeri materjal','Confirm and reserve material')}</button>
+      <span class="muted">${L('Broneering ja ajaplaan salvestatakse ühe toiminguna.','Reservation and schedule are saved in one transaction.')}</span></div>`}
+    </div>`}
+  return out}
+function gantt(o,dueEnd){const all=o.batches;const t0=+o.planStart,t1=Math.max(+o.planEnd,dueEnd?+dueEnd:0);const W=(t1-t0)*1.05||1;
+  const pos=d=>Math.max(0,Math.min(100,(d-t0)/W*100));
+  return `<div class="tbl-wrap"><div class="gantt" style="min-width:420px">${all.map(b=>`<div>${L(b.name,b.en)}</div><div class="track">
+    <div class="seg-b ${b.koost?'koost':''}" style="left:${pos(b.planStart)}%;width:${Math.max(2,pos(b.planEnd)-pos(b.planStart))}%">${fd(b.planEnd)}</div>
+    ${dueEnd?`<div class="line" style="left:${pos(dueEnd)}%" title="${L('Tähtaeg','Due')}"></div>`:''}</div>`).join('')}
+    <div></div><div class="muted" style="font-size:.72rem;display:flex;justify-content:space-between"><span>${fd(o.planStart)}</span>${dueEnd?`<span style="color:var(--bad)">${L('punane katkendjoon = tähtaeg','red dashed line = due')} ${fd(dueEnd)}</span>`:''}<span>${fd(new Date(t1))}</span></div></div></div>`}
+
+/* ---- Tellimuse detailvaade (K02, K03) ---- */
+function vDetail(){const o=S.orders.find(x=>x.nr===S.sel);if(!o)return '';
+  const p=PRODUCTS[o.pk],f=forecast(o),late=lateDays(o),comps=o.batches.filter(b=>!b.koost),ready=comps.filter(b=>b.stages.every(s=>s.status==='valmis')).length;
+  const bk=S.bookings.filter(b=>b.order===o.nr);const ev=S.log.filter(l=>l.order===o.nr);const can=S.role==='planeerija';
+  const downs=[];o.batches.forEach(b=>b.stages.forEach(s=>{if(s.downMin||s.scrap)downs.push({b,s})}));
+  return `<div class="head"><div><h1><span class="mono">${o.nr}</span> · ${L(p.n,p.en)} ${req('K02','U-02')}</h1>
+    <div class="sub">${L('Klienditellimus','Customer PO')} <span class="mono">${o.kt}</span> · ${o.q} ${L('tk','pcs')} · ${pill(o.status)}</div></div>
+    <button class="btn" data-act="nav" data-v="orders">${L('Kõik tellimused','All orders')}</button></div>
+  ${o.status==='ootel'?`<div class="banner warn"><div><b>${L('Tellimus on ootel.','Order is on hold.')}</b> ${esc(o.hold)}</div>${can?`<button class="btn" data-act="recheck" data-v="${o.nr}">${L('Kontrolli materjali uuesti','Re-check material')}</button>`:''}</div>`:''}
+  ${late&&o.status!=='lõpetatud'&&o.status!=='ootel'?`<div class="banner bad"><div><b>${L('Prognoos ületab tähtaega','Forecast exceeds due date')} ${late} ${L('päeva võrra','day(s)')}.</b> ${L('Põhjus: registreeritud seisakud ja praak.','Cause: registered downtime and scrap.')} ${req('F-12','F-13')}</div></div>`:''}
+  <div class="kpis">
+    <div class="kpi"><div class="k">${L('Edenemine','Progress')}</div><div class="v">${progress(o)}%</div><div class="bar"><i style="width:${progress(o)}%"></i></div></div>
+    <div class="kpi"><div class="k">${L('Komponendid koostamiseks','Components ready')} ${req('F-11')}</div><div class="v">${ready}/${comps.length} <small>${L('valmis','ready')}</small></div></div>
+    <div class="kpi"><div class="k">${L('Planeeritud valmimine','Planned')}</div><div class="v num">${fd(o.planEnd)}</div></div>
+    <div class="kpi"><div class="k">${L('Prognoos','Forecast')} ${req('F-13')}</div><div class="v num" style="color:${late?'var(--bad)':'inherit'}">${f?fd(f):'–'}</div></div>
+    <div class="kpi"><div class="k">${L('Tähtaeg','Due')}</div><div class="v num">${fd(o.due)}</div></div>
+  </div>
+  <div class="panel"><div class="ph"><h2>${L('Komponendid, seisund ja asukoht','Components, state and location')}</h2>${req('F-02','F-07','F-11')}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>${L('Partii','Batch')}</th><th>${L('Komponent','Component')}</th><th class="r">${L('Kogus','Qty')}</th><th>${L('Seisund','State')}</th><th>${L('Asukoht','Location')}</th><th>${L('Tööetapid','Steps')}</th><th>${L('Joonis','Drawing')} ${req('F-10')}</th></tr></thead><tbody>
+    ${o.batches.map(b=>{const st=batchState(b),cs=currentStage(b);return `<tr><td class="mono">${b.id}</td><td><b>${L(b.name,b.en)}</b></td><td class="r num">${b.qty}</td><td>${pill(st)}</td>
+      <td class="mono">${b.loc?esc(b.loc):cs&&cs.status==='töös'?`<span class="muted">${OPS[cs.op].st}</span>`:'<span class="muted">–</span>'}</td>
+      <td><div class="stages">${b.stages.map(s=>`<span class="stg ${s.status}" title="${opName(s.op)}: ${statusName(s.status)}${s.by?' · '+s.by:''}">${opName(s.op)}${s.downMin?' ⚠':''}</span>`).join('')}</div></td>
+      <td>${b.dw?`<button class="btn" data-act="drawing" data-v="${b.id}">${b.dw.nr} v${b.dw.v}</button>`:'–'}</td></tr>`}).join('')}
+    </tbody></table></div></div>
+  <div class="grid2">
+    <div class="panel"><div class="ph"><h2>${L('Ajaplaan','Schedule')}</h2>${req('F-03')}</div>${o.planStart?gantt(o,(()=>{const d=new Date(o.due);d.setHours(16);return d})()):`<div class="empty">${L('Ootel tellimusel ajaplaani ei ole','No schedule while on hold')}</div>`}</div>
+    <div class="panel"><div class="ph"><h2>${L('Materjal','Material')}</h2>${req('F-05','F-09')}</div>
+      ${bk.length?`<div class="tbl-wrap"><table><thead><tr><th>${L('Materjal','Material')}</th><th class="r">${L('Broneeritud','Reserved')}</th><th>${L('Väljastatud','Issued')}</th><th class="r">${L('Praak','Scrap')}</th></tr></thead><tbody>
+      ${bk.map(b=>{const m=mat(b.mat);return `<tr><td>${esc(m.n)}${b.extra?` <span class="pill s-ootel">${L('praagi asendus','scrap replacement')}</span>`:''}</td><td class="r num">${fq(b.qty,m.u)} ${m.u}</td><td>${b.issued?pill('valmis',L('jah','yes')):pill('ootel',L('ei','no'))}</td><td class="r num">${b.scrap?fq(b.scrap,m.u):'–'}</td></tr>`}).join('')}</tbody></table></div>`:`<div class="empty">${L('Materjal on broneerimata','No material reserved')}</div>`}
+      ${downs.length?`<div><div class="lbl" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600">${L('Praak ja seisakud','Scrap and downtime')} ${req('F-09','F-12')}</div>
+      ${downs.map(({b,s})=>`<div style="font-size:.85rem">${L(b.name,b.en)} · ${opName(s.op)}: ${s.scrap?`${s.scrap} ${L('tk praaki','pcs scrap')}`:''}${s.scrap&&s.downMin?', ':''}${s.downMin?`${s.downMin} min ${L('seisakut','downtime')} (${esc(s.downWhy)})`:''}</div>`).join('')}</div>`:''}
+    </div></div>
+  ${S.role==='myyk'?`<div class="panel"><div class="ph"><h2>${L('Vastus kliendile','Reply to customer')}</h2>${req('F-13','K02')}</div>
+    <textarea id="reply" rows="3" class="fld" style="padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);width:100%">${esc(replyText(o))}</textarea>
+    <div class="row"><button class="btn" data-act="copyReply">${L('Kopeeri tekst','Copy text')}</button><span class="muted">${L('E-kiri saadetakse tavapärases e-postis (väljaspool MES-i).','The email is sent from the normal mail client (outside the MES).')}</span></div></div>`:''}
+  ${can?vClose(o):''}
+  <div class="panel"><div class="ph"><h2>${L('Tegevuste ajalugu','Activity history')}</h2>${req('R-01')}</div>
+    <div class="log">${ev.map(l=>`<div><time>${fdt(l.t)}</time><span><b>${esc(l.user)}</b> · ${esc(l.msg)}</span></div>`).join('')||`<div class="empty">–</div>`}</div></div>`}
+function replyText(o){const f=forecast(o);const p=PRODUCTS[o.pk];
+  if(o.status==='ootel')return L(`Tere! Teie tellimus ${o.kt} (${p.n}, ${o.q} tk) ootab materjali saabumist. Anname uue tarneaja kohe, kui materjal on laos.`,`Hello! Your order ${o.kt} (${p.en}, ${o.q} pcs) is waiting for material. We will confirm a new date once it arrives.`);
+  return L(`Tere! Teie tellimus ${o.kt} (${p.n}, ${o.q} tk) on tootmises, valmidus ${progress(o)}%. Eeldatav valmimine on ${fd(f)}.`,`Hello! Your order ${o.kt} (${p.en}, ${o.q} pcs) is in production, ${progress(o)}% complete. Expected completion is ${fd(f)}.`)}
+function exportPayload(o){const bk=S.bookings.filter(b=>b.order===o.nr);let work=0,down=0;o.batches.forEach(b=>b.stages.forEach(s=>{work+=s.h;down+=s.downMin}));
+  return {liides:'MES → majandustarkvara',tyyp:'TOOTMISTELLIMUS_LOPETATUD',sundmuse_id:`${o.nr}-CLOSE-1`,tootmistellimus:o.nr,klienditellimus:o.kt,toode:o.pk,valmis_kogus:o.q,lopetatud:fdt(S.now),
+    materjalikulu:bk.map(b=>({materjal:b.mat,kasutatud:+(b.qty).toFixed(4),sh_praak:+(b.scrap||0).toFixed(4),yhik:mat(b.mat).u})),
+    tooaeg_h:+work.toFixed(1),seisakud_min:down,valmistoodete_ladu:o.batches.find(b=>b.koost).loc||'VTL-01'}}
+function vClose(o){
+  if(o.status==='lõpetatud')return `<div class="panel"><div class="ph"><h2>${L('Tellimus lõpetatud','Order closed')}</h2>${req('K03','+-01')}</div>
+    ${o.exported?.ok?`<div class="banner ok"><div>${L('Tegelik kulu ja praak edastatud majandustarkvarale','Actual consumption and scrap sent to accounting software')} ${fdt(o.exported.at)}. ${L('Arve ja saateleht koostatakse majandustarkvaras.','Invoice and delivery note are created there.')}</div></div>`:
+    `<div class="banner bad"><div><b>${L('Edastus ebaõnnestus','Transfer failed')}:</b> ${esc(o.exported?.err||'')} ${L('Kirje on järjekorras, andmed ei kao.','The record is queued; no data is lost.')}</div><button class="btn" data-act="retryExport" data-v="${o.nr}">${L('Proovi uuesti','Retry')}</button></div>`}
+    <details><summary>${L('Saadetud andmepakett (simuleeritud)','Sent payload (simulated)')}</summary><pre class="payload">${esc(JSON.stringify(exportPayload(o),null,2))}</pre></details></div>`;
+  const ok=o.status==='valmis';
+  return `<div class="panel"><div class="ph"><h2>${L('Lõpeta tootmistellimus','Close production order')}</h2>${req('K03','F-09','+-01')}</div>
+    <p style="margin:0" class="muted">${ok?L('Kõik etapid on tehtud. Lõpetamisel saadetakse tegelik materjalikulu ja praak majandustarkvarasse.','All steps done. Closing sends actual material use and scrap to the accounting software.'):L('Lõpetada saab alles siis, kui pakkimine on registreeritud.','Can be closed only after packing is registered.')}</p>
+    <label class="row" style="font-size:.85rem"><input type="checkbox" id="failsim" data-act="failsim" ${S.exportFail?'checked':''}> ${L('Simuleeri liidese viga (majandustarkvara ei vasta)','Simulate interface error (accounting software not responding)')}</label>
+    <div class="row"><button class="btn pri" data-act="closeOrder" data-v="${o.nr}" ${ok?'':'disabled'}>${L('Lõpeta tellimus','Close order')}</button></div></div>`}
+
+/* ---- Tootmistöötaja tööjaam (K04–K07) ---- */
+function vWorker(){
+  if(S.role!=='tootmine')return noAccess();
+  const items=[];S.orders.forEach(o=>{if(o.status==='lõpetatud')return;o.batches.forEach(b=>b.stages.forEach((s,i)=>{if(OPS[s.op].st===S.station&&s.status!=='valmis')items.push({o,b,s,i,lock:stageLock(o,b,i)})}))});
+  items.sort((a,b)=>(a.s.status==='töös'?-1:0)-(b.s.status==='töös'?-1:0)||(!!a.lock)-(!!b.lock));
+  const done=[];S.orders.forEach(o=>o.batches.forEach(b=>b.stages.forEach(s=>{if(OPS[s.op].st===S.station&&s.status==='valmis'&&s.end&&fd(s.end)===fd(S.now))done.push({o,b,s})})));
+  const pend=pendingLocations();
+  return `<div class="head"><div><h1>${L('Minu tööjaam','My workstation')} ${req('K04','+-03','U-01')}</h1><div class="sub">${L('Tahvelarvuti vaade tootmispõrandal. Vali tööjaam ja registreeri töö algus ja lõpp.','Tablet view on the shop floor. Pick a station and register start and finish.')}</div></div>
+    <div class="fld" style="min-width:240px"><label for="station">${L('Tööjaam','Workstation')}</label><select id="station" data-act="station" style="font-size:1.05rem;padding:12px">${STATIONS.map(([k,et,en])=>`<option value="${k}" ${S.station===k?'selected':''}>${k} · ${L(et,en)}</option>`).join('')}</select></div></div>
+  ${pend.length?`<div class="banner info"><div><b>${L('Valmis komponendid ootavad asukohta','Finished components need a location')}</b> ${req('K07','F-07')} ${pend.map(([o,b])=>`<span class="mono">${b.id}</span>`).join(', ')}</div><button class="btn" data-act="locModal" data-v="${pend[0][1].id}">${L('Registreeri asukoht','Register location')}</button></div>`:''}
+  ${(()=>{const card=({o,b,s,i,lock})=>`<div class="card ${s.status==='töös'?'active':''} ${lock?'locked':''}">
+    <div class="t"><div><div class="op">${opName(s.op)}</div><div class="mono muted">${b.id}</div></div>${pill(s.status==='töös'?'töös':'ootel',s.status==='töös'?L('Töös','Running'):L('Järjekorras','Queued'))}</div>
+    <dl class="dl"><dt>${L('Toode','Product')}</dt><dd>${L(PRODUCTS[o.pk].n,PRODUCTS[o.pk].en)} · ${L(b.name,b.en)}</dd><dt>${L('Kogus','Qty')}</dt><dd class="num">${b.qty} ${L('tk','pcs')}</dd><dt>${L('Norm','Std time')}</dt><dd class="num">${s.h.toFixed(1)} h</dd>
+    ${s.start?`<dt>${L('Alustatud','Started')}</dt><dd class="num">${fdt(s.start)} · ${esc(s.by)}</dd>`:''}${s.downMin?`<dt>${L('Seisak','Downtime')}</dt><dd>${s.downMin} min · ${esc(s.downWhy)}</dd>`:''}</dl>
+    ${lock?`<div class="lock">🔒 ${esc(lock)}</div>`:''}
+    <div class="row">${s.status==='töös'?`<button class="btn pri big" data-act="finish" data-o="${o.nr}" data-b="${b.id}" data-i="${i}" style="flex:1">${L('Lõpeta','Finish')}</button>`:
+      `<button class="btn pri big" data-act="start" data-o="${o.nr}" data-b="${b.id}" data-i="${i}" style="flex:1" ${lock?'disabled':''}>${L('Alusta','Start')}</button>`}
+      ${b.dw?`<button class="btn big" data-act="drawing" data-v="${b.id}" title="F-10">${L('Joonis','Drawing')}</button>`:''}
+      <button class="btn big" data-act="scrapModal" data-o="${o.nr}" data-b="${b.id}" data-i="${i}" ${s.status==='töös'?'':'disabled'}>${L('Praak / seisak','Scrap / downtime')}</button></div>
+    <div class="row">${req('F-06')}${b.dw?req('K06','F-10'):''}${req('K05','F-09','F-12')}${b.koost?req('F-11'):''}</div>
+  </div>`;const act=items.filter(x=>!x.lock),wait=items.filter(x=>x.lock);
+    return `<h2>${L('Saab teha','Ready to work')} <span class="muted num">${act.length}</span></h2>
+    ${act.length?`<div class="cards">${act.map(card).join('')}</div>`:`<div class="panel empty">${L('Selles tööjaamas ei ole praegu alustatavaid töid. Proovi tööjaama LIHV-1, CNC-1, TREI-2 või KOOST-1.','No jobs ready at this station. Try LIHV-1, CNC-1, TREI-2 or KOOST-1.')}</div>`}
+    ${wait.length?`<details class="panel"><summary><b>${L('Järjekorras, ei saa veel alustada','Queued, cannot start yet')}</b> <span class="muted num">${wait.length}</span> ${req('F-11','K08')}</summary><div class="cards" style="margin-top:12px">${wait.map(card).join('')}</div></details>`:''}`})()}
+  ${done.length?`<div class="panel"><h3>${L('Täna lõpetatud','Finished today')}</h3><div class="log">${done.map(({b,s})=>`<div><time>${ft(s.end)}</time><span>${opName(s.op)} · <span class="mono">${b.id}</span> · ${esc(s.by)}</span></div>`).join('')}</div></div>`:''}`}
+
+/* ---- Ladu (K07, K08, F-04) ---- */
+function vWh(){
+  if(!(S.role==='ladu'||(S.role==='planeerija'&&S.whTab==='stock')))return noAccess();
+  const tabs=S.role==='ladu'?[['issue',L('Väljastamine','Issue')],['loc',L('Asukohad','Locations')],['stock',L('Laoseis','Stock')]]:[['stock',L('Laoseis','Stock')]];
+  let body='';
+  if(S.whTab==='issue'){const ords=[...new Set(S.bookings.filter(b=>!b.issued).map(b=>b.order))].map(n=>S.orders.find(o=>o.nr===n)).filter(o=>o&&o.status!=='ootel');
+    body=`<p class="muted" style="margin:0">${L('Kinnitatud tellimuste broneeritud materjal. Väljastamise järel saab tootmine alustada.','Reserved material of confirmed orders. Production can start after issue.')}</p>
+    ${ords.map(o=>`<div class="panel"><div class="ph"><h3><span class="mono">${o.nr}</span> · ${L(PRODUCTS[o.pk].n,PRODUCTS[o.pk].en)} · ${L('algus','start')} ${fd(o.planStart)}</h3>${req('K08')}</div>
+      <div class="tbl-wrap"><table><thead><tr><th>${L('Materjal','Material')}</th><th>${L('Laokoht','Bin')}</th><th class="r">${L('Kogus','Qty')}</th></tr></thead><tbody>
+      ${S.bookings.filter(b=>b.order===o.nr&&!b.issued).map(b=>{const m=mat(b.mat);return `<tr><td>${esc(m.n)}${b.extra?` <span class="pill s-ootel">${L('praagi asendus','scrap replacement')}</span>`:''}</td><td class="mono">${m.loc}</td><td class="r num">${fq(b.qty,m.u)} ${m.u}</td></tr>`}).join('')}
+      </tbody></table></div><div class="row"><button class="btn pri big" data-act="issue" data-v="${o.nr}">${L('Väljasta tellimusele','Issue to order')}</button></div></div>`).join('')||`<div class="panel empty">${L('Väljastamist ootavaid tellimusi ei ole','Nothing waiting for issue')}</div>`}`}
+  if(S.whTab==='loc'){const rows=[];S.orders.forEach(o=>{if(o.status==='lõpetatud')return;o.batches.filter(b=>!b.koost).forEach(b=>rows.push([o,b]))});
+    body=`<div class="panel"><div class="ph"><h2>${L('Komponendipartiide asukohad','Component batch locations')}</h2>${req('K07','F-07','F-08')}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>${L('Partii','Batch')}</th><th>${L('Komponent','Component')}</th><th>${L('Seisund','State')}</th><th>${L('Asukoht','Location')}</th><th></th></tr></thead><tbody>
+    ${rows.map(([o,b])=>`<tr><td class="mono">${b.id}</td><td>${L(b.name,b.en)}</td><td>${pill(batchState(b))}</td><td class="mono">${b.loc||'–'}</td><td><button class="btn" data-act="locModal" data-v="${b.id}">${b.loc?L('Muuda','Move'):L('Registreeri','Register')}</button></td></tr>`).join('')}</tbody></table></div></div>`}
+  if(S.whTab==='stock'){body=`<div class="panel"><div class="ph"><h2>${L('Materjalide laoseis','Material stock')}</h2>${req('F-04','F-05','+-01')}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>${L('Kood','Code')}</th><th>${L('Materjal','Material')}</th><th>${L('Liik','Type')}</th><th>${L('Laokoht','Bin')}</th><th class="r">${L('Laos','Stock')}</th><th class="r">${L('Broneeritud','Reserved')}</th><th class="r">${L('Vaba','Free')}</th>${S.role==='ladu'?'<th></th>':''}</tr></thead><tbody>
+    ${MATS.map(m=>{const b=bookedFree(m.k);return `<tr><td class="mono">${m.k}</td><td>${esc(m.n)}</td><td>${m.liik}</td><td class="mono">${m.loc}</td><td class="r num">${fq(b.stock,m.u)} ${m.u}</td><td class="r num">${fq(b.res,m.u)}</td><td class="r num" style="${b.free<0?'color:var(--bad)':''}">${fq(b.free,m.u)}</td>
+      ${S.role==='ladu'?`<td><button class="btn" data-act="receive" data-v="${m.k}" title="${L('Simuleeritud ostu saabumine','Simulated purchase receipt')}">+ ${L('Saabus','Received')}</button></td>`:''}</tr>`}).join('')}</tbody></table></div>
+    <p class="muted" style="margin:0;font-size:.8rem">${L('Vaba = laos − väljastamata broneeringud. "Saabus" lisab simuleeritud ostusaadetise (ost on skoobist väljas).','Free = stock − unissued reservations. "Received" adds a simulated delivery (purchasing is out of scope).')}</p></div>`}
+  return `<div class="head"><div><h1>${L('Ladu','Warehouse')}</h1><div class="sub">${L('Materjali väljastamine, komponentide asukohad ja laoseis.','Material issue, component locations and stock.')}</div></div></div>
+  <div class="tabs" role="tablist">${tabs.map(([k,t])=>`<button role="tab" aria-selected="${S.whTab===k}" data-act="nav" data-v="wh-${k}">${t}</button>`).join('')}</div>${body}`}
+
+function vLog(){return `<div class="head"><div><h1>${L('Tegevuslogi','Activity log')} ${req('R-01')}</h1><div class="sub">${L('Kes, millal ja mida muutis.','Who changed what, and when.')}</div></div></div>
+  <div class="panel"><div class="log">${S.log.map(l=>`<div><time>${fdt(l.t)}</time><span><b>${esc(l.user)}</b> (${ROLE_NAMES[l.role][S.lang==='et'?0:1]}) · <span class="mono">${l.order}</span> · ${esc(l.msg)}</span></div>`).join('')}</div></div>`}
+
+function vSearch(){const q=S.lastQ.trim().toLowerCase();const res=[];
+  if(q){S.orders.forEach(o=>{const p=PRODUCTS[o.pk];if([o.nr,o.kt,p.n,p.en].some(x=>x.toLowerCase().includes(q)))res.push({t:L('Tootmistellimus','Order'),k:o.nr,d:`${p.n} · ${o.q} tk · ${statusName(o.status)}`,act:'open',v:o.nr});
+    o.batches.forEach(b=>{if([b.id,b.name,b.en,b.loc||''].some(x=>x.toLowerCase().includes(q)))res.push({t:L('Komponendipartii','Batch'),k:b.id,d:`${L(b.name,b.en)} · ${statusName(batchState(b))} · ${L('asukoht','location')} ${b.loc||'–'}`,act:'open',v:o.nr})})});
+    MATS.forEach(m=>{if([m.k,m.n,m.loc].some(x=>x.toLowerCase().includes(q))){const b=bookedFree(m.k);res.push({t:L('Materjal','Material'),k:m.k,d:`${m.n} · ${m.loc} · ${L('vaba','free')} ${fq(b.free,m.u)} ${m.u}`})}});
+    LOCATIONS.forEach(([k,n])=>{if(k.toLowerCase().includes(q)||n.toLowerCase().includes(q)){const here=[];S.orders.forEach(o=>o.batches.forEach(b=>{if(b.loc===k)here.push(b.id)}));res.push({t:L('Asukoht','Location'),k,d:`${n} · ${here.length?here.join(', '):L('tühi','empty')}`})}})}
+  return `<div class="head"><div><h1>${L('Otsingu tulemused','Search results')} ${req('F-08')}</h1><div class="sub">„${esc(S.lastQ)}“ · ${res.length} ${L('vastet','results')}</div></div></div>
+  <div class="panel"><div class="tbl-wrap"><table><thead><tr><th>${L('Tüüp','Type')}</th><th>${L('Tunnus','ID')}</th><th>${L('Kirjeldus','Description')}</th></tr></thead><tbody>
+  ${res.map(r=>`<tr ${r.act&&S.role!=='tootmine'?`class="click" data-act="${r.act}" data-v="${r.v}" tabindex="0"`:''}><td>${r.t}</td><td class="mono"><b>${esc(r.k)}</b></td><td>${esc(r.d)}</td></tr>`).join('')||`<tr><td colspan="3" class="empty">${L('Vasteid ei leitud. Proovi: VL-B2, RATAS, 0141, KT-58907, karp.','No matches. Try: VL-B2, RATAS, 0141, KT-58907, karp.')}</td></tr>`}</tbody></table></div></div>`}
+
+function noAccess(){return `<div class="panel"><h2>${L('Sellele vaatele puudub ligipääs','No access to this view')} ${req('+-02')}</h2><p class="muted">${L('Rolli õigused piiravad vaated. Vaheta rolli ülaribal.','Role permissions limit the views. Switch role in the top bar.')}</p></div>`}
+
+/* ---- Modaalid ---- */
+function drawingModal(bid){let b;S.orders.forEach(o=>o.batches.forEach(x=>{if(x.id===bid)b=x}));if(!b||!b.dw)return;
+  const shape=b.shape==='wheel'?`<circle class="ln" cx="190" cy="140" r="80" stroke-width="2"/><circle class="ln" cx="190" cy="140" r="8" stroke-width="2"/><circle class="ln" cx="190" cy="140" r="60" stroke-dasharray="6 4"/>
+    <line class="dim" x1="110" y1="245" x2="270" y2="245"/><text x="170" y="262" font-size="12">Ø 50</text><text x="200" y="128" font-size="11">Ø 6,2</text>`:
+    b.shape==='ear'?`<path class="ln" stroke-width="2" d="M150 230 C130 150 150 60 190 50 C230 60 250 150 230 230 Z"/><line class="dim" x1="150" y1="250" x2="230" y2="250"/><text x="170" y="266" font-size="12">40</text><line class="dim" x1="270" y1="50" x2="270" y2="230"/><text x="276" y="145" font-size="12">90</text>`:
+    `<rect class="ln" stroke-width="2" x="70" y="80" width="240" height="120" rx="18"/><circle class="ln" cx="120" cy="200" r="7" stroke-width="2"/><circle class="ln" cx="260" cy="200" r="7" stroke-width="2"/>
+    <line class="dim" x1="70" y1="245" x2="310" y2="245"/><text x="172" y="262" font-size="12">120</text><line class="dim" x1="340" y1="80" x2="340" y2="200"/><text x="346" y="145" font-size="12">60</text><text x="100" y="225" font-size="10">2× Ø 6,2</text>`;
+  S.modal=`<div class="head"><h2>${L('Tootmisjoonis','Production drawing')} ${req('K06','F-10','+-04')}</h2><button class="btn" data-act="closeModal">${L('Sulge','Close')}</button></div>
+  <div class="banner ok"><div><b>${L('Kehtiv versioon','Current version')}: ${b.dw.nr} v${b.dw.v}</b> · ${L('kehtib alates','valid from')} ${b.dw.from}. ${b.dw.old?`${L('Varasem','Previous')} ${b.dw.old} ${L('ei ole tootmises kuvatav.','is not shown in production.')}`:''}</div></div>
+  <div class="drawing"><svg viewBox="0 0 640 300" role="img" aria-label="${L('Skemaatiline joonis','Schematic drawing')} ${b.dw.nr}">${shape}
+    <rect class="ln" x="400" y="20" width="220" height="260"/><line class="ln" x1="400" y1="70" x2="620" y2="70"/><line class="ln" x1="400" y1="120" x2="620" y2="120"/><line class="ln" x1="400" y1="170" x2="620" y2="170"/>
+    <text x="410" y="40" font-size="10">${L('JOONISE NR','DRAWING NO')}</text><text x="410" y="60" font-size="16">${b.dw.nr}</text>
+    <text x="410" y="90" font-size="10">${L('DETAIL','PART')}</text><text x="410" y="110" font-size="14">${esc(L(b.name,b.en))}</text>
+    <text x="410" y="140" font-size="10">${L('VERSIOON / KEHTIB','REV / VALID')}</text><text x="410" y="160" font-size="14">v${b.dw.v} · ${b.dw.from}</text>
+    <text x="410" y="190" font-size="10">${L('MATERJAL','MATERIAL')}</text><text x="410" y="208" font-size="12">${b.shape==='wheel'?'Pöök / kask':'Kask 25 mm'}</text><text x="410" y="228" font-size="10">${L('Mõõdud mm, CAD/CAM allikas','Dimensions mm, source CAD/CAM')}</text>
+    <rect class="stamp" x="470" y="242" width="90" height="28" rx="3" transform="rotate(-6 515 256)"/><text class="stamptx" x="484" y="262" font-size="13" transform="rotate(-6 515 256)">${L('KEHTIV','CURRENT')}</text>
+  </svg></div><p class="muted" style="margin:0;font-size:.8rem">${L('Prototüübis on joonis skemaatiline. Päris süsteemis kuvatakse CAD/CAM-ist eksporditud PDF kehtiva versiooni viite kaudu.','Schematic in the prototype. The real system shows the PDF exported from CAD/CAM via the current-version reference.')}</p>`;render()}
+function scrapModal(nr,bid,i){const o=S.orders.find(x=>x.nr===nr),b=o.batches.find(x=>x.id===bid),s=b.stages[i];
+  S.modal=`<div class="head"><h2>${L('Praak ja seisak','Scrap and downtime')} ${req('K05','F-09','F-12')}</h2><button class="btn" data-act="closeModal">${L('Sulge','Close')}</button></div>
+  <div class="muted">${opName(s.op)} · <span class="mono">${b.id}</span></div>
+  <form class="f" data-act="saveScrap" data-o="${nr}" data-b="${bid}" data-i="${i}" novalidate>
+    <div class="fld"><label for="scrap">${L('Praagi kogus, tk','Scrap qty, pcs')}</label><input id="scrap" name="scrap" inputmode="numeric" value="0" style="font-size:1.1rem;padding:12px"></div>
+    <div class="fld"><label for="scrapWhy">${L('Praagi põhjus','Scrap reason')}</label><select id="scrapWhy" name="scrapWhy" style="padding:12px"><option>${L('Puidu viga (oks, lõhe)','Wood defect (knot, crack)')}</option><option>${L('Mõõtmeviga','Dimension error')}</option><option>${L('Viimistlusviga','Finish defect')}</option><option>${L('Joonise viga','Drawing error')}</option></select></div>
+    <div class="fld"><label for="down">${L('Seisak, min','Downtime, min')}</label><input id="down" name="down" inputmode="numeric" value="0" style="font-size:1.1rem;padding:12px"></div>
+    <div class="fld"><label for="downWhy">${L('Seisaku põhjus','Downtime reason')}</label><select id="downWhy" name="downWhy" style="padding:12px"><option>${L('Masina rike','Machine failure')}</option><option>${L('Seadistus / ümberseadistus','Setup / changeover')}</option><option>${L('Materjali ootamine','Waiting for material')}</option><option>${L('Joonise viga','Drawing error')}</option><option>${L('Muu','Other')}</option></select></div>
+    <div class="fld" id="scrapErr" style="grid-column:1/-1"></div>
+    <div class="row" style="grid-column:1/-1"><button class="btn pri big" type="submit">${L('Salvesta','Save')}</button></div></form>`;render()}
+function locModal(bid){let o,b;S.orders.forEach(x=>x.batches.forEach(y=>{if(y.id===bid){o=x;b=y}}));
+  S.modal=`<div class="head"><h2>${L('Registreeri asukoht','Register location')} ${req('K07','F-07')}</h2><button class="btn" data-act="closeModal">${L('Sulge','Close')}</button></div>
+  <div><span class="mono">${b.id}</span> · ${L(b.name,b.en)} · ${b.qty} ${L('tk','pcs')} · ${L('praegu','now')} <b class="mono">${b.loc||'–'}</b></div>
+  <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">${LOCATIONS.filter(([k])=>b.koost?k.startsWith('VTL'):!k.startsWith('VTL')).map(([k,n])=>`<button class="btn big" data-act="setLoc" data-b="${bid}" data-v="${k}" style="flex-direction:column;align-items:flex-start;white-space:normal;text-align:left"><span class="mono">${k}</span><span class="muted" style="font-weight:500;font-size:.8rem">${n}</span></button>`).join('')}</div>`;render()}
+
+/* ===================== Tegevused ===================== */
+function findBatch(bid){for(const o of S.orders)for(const b of o.batches)if(b.id===bid)return[o,b];return[]}
+const A={
+  nav(v){S.modal=null;if(v.startsWith('wh-')){S.view='wh';S.whTab=v.slice(3)}else{S.view=v}if(v==='new'&&!S.draft)S.errors={};render();window.scrollTo(0,0)},
+  role(v){S.role=v;S.modal=null;S.view={planeerija:'orders',myyk:'orders',tootmine:'worker',ladu:'wh'}[v];S.whTab=v==='ladu'?'issue':'stock';render()},
+  lang(v){S.lang=v;if(S.modal)S.modal=null;render()},
+  toggleReq(){S.showReq=!S.showReq;render()},
+  filter(v){S.filter=v;render()},
+  open(v){if(S.role==='tootmine'||S.role==='ladu'){toast(L('Tellimuse detailvaade on planeerijale ja müügile.','Order details are for planner and sales.'));return}S.sel=v;S.view='detail';render();window.scrollTo(0,0)},
+  station(v){S.station=v;render()},
+  reset(){S.seq=143;S.orders=[];S.bookings=[];S.log=[];S.now=new Date(2026,10,26,9,40);S.draft=null;S.errors={};MATS.forEach((m,i)=>m.ladu=[3.40,1.80,900,150,38,22,600,20][i]);seed();render();toast(L('Algandmed taastatud','Sample data reset'))},
+  drawing(v){drawingModal(v)},
+  closeModal(){S.modal=null;render()},
+  closeModalBg(v,el,ev){if(ev.target===el){S.modal=null;render()}},
+  scrapModal(v,el){scrapModal(el.dataset.o,el.dataset.b,+el.dataset.i)},
+  locModal(v){locModal(v)},
+  setLoc(v,el){const[o,b]=findBatch(el.dataset.b);const prev=b.loc;b.loc=v;tick(3);logEv(o.nr,`${b.name} (${b.id}) ${prev?`viidud ${prev} → ${v}`:`viidud asukohta ${v}`}`);S.modal=null;render();toast(L(`Asukoht salvestatud: ${v}`,`Location saved: ${v}`))},
+  start(v,el){const o=S.orders.find(x=>x.nr===el.dataset.o),b=o.batches.find(x=>x.id===el.dataset.b),s=b.stages[+el.dataset.i];
+    if(s.status!=='ootel'){toast(L(`Korduv registreering: etapp on juba alustatud ${fdt(s.start)} (${s.by}). Uut kirjet ei loodud.`,`Duplicate: already started ${fdt(s.start)} (${s.by}). No new record.`),true);return}
+    const lock=stageLock(o,b,+el.dataset.i);if(lock){toast(lock,true);return}
+    tick(4);s.status='töös';s.start=new Date(S.now);s.by=USERS.tootmine;refreshOrderStatus(o);logEv(o.nr,`${opName(s.op)} alustatud (${b.id}, ${OPS[s.op].st})`);render();toast(L('Alustatud ','Started ')+ft(S.now))},
+  finish(v,el){const o=S.orders.find(x=>x.nr===el.dataset.o),b=o.batches.find(x=>x.id===el.dataset.b),s=b.stages[+el.dataset.i];
+    if(s.status==='valmis'){toast(L(`Korduv registreering: etapp on juba lõpetatud ${fdt(s.end)}. Uut kirjet ei loodud.`,`Duplicate: already finished ${fdt(s.end)}. No new record.`),true);return}
+    el.disabled=true;tick(12);s.status='valmis';s.end=new Date(S.now);logEv(o.nr,`${opName(s.op)} lõpetatud (${b.id})`);
+    const allDone=b.stages.every(x=>x.status==='valmis');refreshOrderStatus(o);render();
+    if(allDone&&!b.koost){toast(L(`${b.name} valmis. Vii komponent vahelattu ja registreeri asukoht.`,`${b.en} done. Move it to buffer and register location.`));locModal(b.id)}
+    else if(allDone&&b.koost){toast(L('Pakkimine tehtud, tellimus valmis. Registreeri valmistoodete lao koht.','Packed, order done. Register finished-goods location.'));locModal(b.id)}
+    else toast(L('Lõpetatud ','Finished ')+ft(S.now))},
+  issue(v){const o=S.orders.find(x=>x.nr===v);S.bookings.filter(b=>b.order===v&&!b.issued).forEach(b=>{b.issued=true;mat(b.mat).ladu-=b.qty});o.issued=true;tick(15);logEv(v,'Materjal väljastatud tellimusele');render();toast(L(`Materjal väljastatud: ${v}`,`Material issued: ${v}`))},
+  receive(v){const m=mat(v);const add=m.u==='tk'?100:m.u==='m³'?1:m.u==='l'?20:100;m.ladu+=add;tick(5);logEv('—',`Saabus ${fq(add,m.u)} ${m.u} ${m.n} (simuleeritud ost)`);render();toast(L(`Laoseis +${fq(add,m.u)} ${m.u}: ${m.n}`,`Stock +${fq(add,m.u)} ${m.u}: ${m.n}`))},
+  recheck(v){const o=S.orders.find(x=>x.nr===v);const short=needFor(o.pk,o.q).filter(n=>n.need>bookedFree(n.k).free+1e-9);
+    if(short.length){o.hold=short.map(n=>`${mat(n.k).n}: vaja ${fq(n.need,mat(n.k).u)}, vaba ${fq(bookedFree(n.k).free,mat(n.k).u)}`).join('; ');render();toast(L('Materjal endiselt puudu. Laotöötaja saab registreerida saabumise.','Still short. Warehouse can register receipt.'),true);return}
+    needFor(o.pk,o.q).forEach(n=>S.bookings.push({order:o.nr,mat:n.k,qty:n.need,issued:false,used:0,scrap:0}));schedule(o,addWH(S.now,backlogH(o)+2));o.status='planeeritud';o.hold='';tick(3);logEv(o.nr,'Materjal olemas: tellimus planeeritud ja materjal broneeritud');render();toast(L('Tellimus planeeritud, materjal broneeritud','Order planned, material reserved'))},
+  failsim(v,el){S.exportFail=el.checked},
+  closeOrder(v){const o=S.orders.find(x=>x.nr===v);if(o.status!=='valmis')return;tick(5);o.status='lõpetatud';
+    S.bookings.filter(b=>b.order===v).forEach(b=>b.used=b.qty);
+    o.exported=S.exportFail?{ok:false,err:'HTTP 503, majandustarkvara ei vastanud 30 s jooksul'}:{ok:true,at:new Date(S.now)};
+    logEv(v,'Tellimus lõpetatud'+(S.exportFail?'; edastus majandustarkvarale ebaõnnestus, kirje järjekorras':'; kulu ja praak edastatud majandustarkvarale'));render();toast(S.exportFail?L('Lõpetatud, kuid edastus ebaõnnestus','Closed, but transfer failed'):L('Tellimus lõpetatud ja edastatud','Order closed and sent'),S.exportFail)},
+  retryExport(v){const o=S.orders.find(x=>x.nr===v);tick(2);o.exported={ok:true,at:new Date(S.now)};logEv(v,'Korduv edastus majandustarkvarale õnnestus (sama sündmuse_id, duplikaati ei teki)');render();toast(L('Edastus õnnestus','Transfer succeeded'))},
+  copyReply(){const t=document.getElementById('reply');try{navigator.clipboard.writeText(t.value).then(()=>toast(L('Kopeeritud','Copied')),()=>{t.select();toast(L('Vajuta Ctrl+C','Press Ctrl+C'))})}catch(e){t.select()}},
+  confirmNew(){const d=S.draft;const nr=`PT-2026-0${S.seq++}`;
+    const o=buildOrder(nr,d.kt,d.pk,d.q,d.due);schedule(o,addWH(S.now,backlogH(null)+2));S.orders.push(o);
+    needFor(d.pk,d.q).forEach(n=>S.bookings.push({order:nr,mat:n.k,qty:n.need,issued:false,used:0,scrap:0}));
+    tick(6);logEv(nr,`Tellimus loodud klienditellimusest ${d.kt}, materjal broneeritud (${PRODUCTS[d.pk].bom.length} rida), prognoos ${fd(o.planEnd)}`);
+    S.draft=null;S.sel=nr;S.view='detail';render();toast(L(`Tellimus ${nr} kinnitatud`,`Order ${nr} confirmed`))},
+  saveHold(){const d=S.draft;const nr=`PT-2026-0${S.seq++}`;const o=buildOrder(nr,d.kt,d.pk,d.q,d.due);o.status='ootel';
+    const short=needFor(d.pk,d.q).filter(n=>n.need>bookedFree(n.k).free+1e-9);o.hold=short.map(n=>`${mat(n.k).n}: vaja ${fq(n.need,mat(n.k).u)}, vaba ${fq(bookedFree(n.k).free,mat(n.k).u)}`).join('; ')+'. Ostuvajadus märgitud.';
+    S.orders.push(o);tick(4);logEv(nr,'Tellimus salvestatud ootel olekus: '+o.hold);S.draft=null;S.sel=nr;S.view='detail';render();toast(L(`Tellimus ${nr} on ootel`,`Order ${nr} on hold`))}
+};
+const FORMS={
+  search(f){S.lastQ=f.querySelector('#q').value;S.view='search';render()},
+  checkNew(f){const fd_=new FormData(f);const kt=String(fd_.get('kt')).trim().toUpperCase(),pk=fd_.get('pk'),qs=String(fd_.get('q')).trim(),due=fd_.get('due');const e={};
+    if(!kt)e.kt=L('Sisesta klienditellimuse number.','Enter the customer PO number.');else if(!/^KT-\d{5}$/.test(kt))e.kt=L('Vorming on KT-12345.','Format is KT-12345.');else if(S.orders.some(o=>o.kt===kt))e.kt=L(`Klienditellimuse ${kt} kohta on tootmistellimus juba olemas (${S.orders.find(o=>o.kt===kt).nr}).`,`A production order for ${kt} already exists (${S.orders.find(o=>o.kt===kt).nr}).`);
+    if(!pk)e.pk=L('Vali toode.','Choose a product.');
+    const q=Number(qs);if(!qs)e.q2=L('Sisesta kogus.','Enter a quantity.');else if(!Number.isInteger(q)||q<1||q>5000)e.q2=L('Kogus peab olema täisarv 1–5000.','Quantity must be a whole number 1–5000.');
+    let dd=null;if(!due)e.due=L('Vali tähtaeg.','Choose a due date.');else{dd=new Date(due+'T00:00');const today=new Date(S.now);today.setHours(0,0,0,0);if(dd<today)e.due=L('Tähtaeg ei saa olla minevikus.','Due date cannot be in the past.')}
+    S.errors=e;S.draft={kt,pk,q:Object.keys(e).length?qs:q,due:dd,dueStr:due,checked:!Object.keys(e).length};render();
+    if(Object.keys(e).length){const first=document.querySelector('.has-err input,.has-err select');first&&first.focus()}},
+  saveScrap(f){const o=S.orders.find(x=>x.nr===f.dataset.o),b=o.batches.find(x=>x.id===f.dataset.b),s=b.stages[+f.dataset.i];
+    const sc=Number(f.scrap.value),dn=Number(f.down.value);const err=f.querySelector('#scrapErr');
+    if(!Number.isInteger(sc)||sc<0||sc>b.qty||!Number.isInteger(dn)||dn<0||dn>600){err.innerHTML=`<span class="err" style="color:var(--bad)">${L(`Praak 0–${b.qty} tk ja seisak 0–600 min, täisarvud.`,`Scrap 0–${b.qty} pcs and downtime 0–600 min, whole numbers.`)}</span>`;return}
+    if(!sc&&!dn){err.innerHTML=`<span class="err" style="color:var(--bad)">${L('Sisesta praagi kogus või seisaku kestus.','Enter scrap quantity or downtime.')}</span>`;return}
+    tick(3);const msgs=[];
+    if(sc){s.scrap+=sc;const p=PRODUCTS[o.pk];const [mk,per]=p.bom[0];const extra=sc*per/(b.koost?1:p.comps.find(c=>c.k===b.comp).per);
+      const bk=S.bookings.find(x=>x.order===o.nr&&x.mat===mk);if(bk)bk.scrap=(bk.scrap||0)+extra;
+      const free=bookedFree(mk).free;if(extra<=free){S.bookings.push({order:o.nr,mat:mk,qty:extra,issued:false,used:0,scrap:0,extra:true});o.issued=true;msgs.push(L(`Praagi asenduseks broneeriti ${fq(extra,mat(mk).u)} ${mat(mk).u} ${mat(mk).n}.`,`Reserved ${fq(extra,mat(mk).u)} ${mat(mk).u} replacement.`))}
+      else msgs.push(L('Asendusmaterjali ei jätku, planeerijat teavitatakse.','Not enough replacement material; planner notified.'));
+      logEv(o.nr,`Praak ${sc} tk (${f.scrapWhy.value}) etapis ${opName(s.op)}, ${b.id}`)}
+    if(dn){s.downMin+=dn;s.downWhy=f.downWhy.value;logEv(o.nr,`Seisak ${dn} min ${OPS[s.op].st}: ${f.downWhy.value}`)}
+    S.modal=null;render();toast(L('Salvestatud. Prognoos uuendatud: ','Saved. Forecast updated: ')+fd(forecast(o))+(msgs.length?' '+msgs.join(' '):''))}
+};
+document.addEventListener('click',ev=>{const el=ev.target.closest('[data-act]');if(!el||el.tagName==='FORM'||el.tagName==='SELECT'||el.type==='checkbox')return;const a=A[el.dataset.act];if(a){a(el.dataset.v,el,ev)}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Enter'){const el=ev.target.closest('tr[data-act]');if(el)A[el.dataset.act](el.dataset.v,el,ev)}if(ev.key==='Escape'&&S.modal){S.modal=null;render()}});
+document.addEventListener('change',ev=>{const el=ev.target;if(el.dataset.act&&A[el.dataset.act])A[el.dataset.act](el.value,el,ev)});
+document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();if(FORMS[f.dataset.act])FORMS[f.dataset.act](f)});
+render();
+</script>
+</body>
+</html>
